@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 from scipy.stats import beta as betadist
 import matplotlib.pyplot as plt
+import ast
 
 
 # Base option
@@ -146,6 +147,116 @@ def ab_loss(option_name):
         st.write(f"Expected loss with option A: {100*total:.2e}%")
 
 
+# A > B, C, ... Monte Carlo
+def abc_mc_chance_of_being_correct(successes, sample_sizes, a, b, N=5000000, seed=None):
+    """
+    Monte Carlo simulation to determine chance option A (out of many options) is
+    the correct choice.
+
+    Inputs:
+    - successes: Array of successes for samples A, B, C, ...
+    - sample_sizes: Array of sample sizes for samples A, B, C, ...
+    - a: Prior alpha
+    - b: Prior beta
+    - N: Number of samples to pick
+    - seed: Random seed
+    """
+
+    if len(successes) != len(sample_sizes):
+        raise ValueError("successes and sample_sizes need to be the same length")
+
+    if seed:
+        np.random.seed(seed)
+
+    successes = np.array(successes)
+    failures = np.array(sample_sizes) - successes
+
+    dim = len(successes)
+
+    random_vals = np.random.rand(dim, N)
+
+    # Joint probability
+    beta_vals = np.zeros((dim, N))
+    for ii in range(dim):
+        beta_vals[ii, :] = beta.pdf(random_vals[ii, :], a + successes[ii], b + failures[ii])
+    prod_beta = np.prod(beta_vals, axis=0)
+
+    # Find where lambda_A >= all the others (indicator function)
+    indicator = np.ones(N, dtype=bool)
+    for ii in range(1, dim):
+        indicator = indicator * (random_vals[0, :] >= random_vals[ii, :])
+
+    value = (prod_beta * indicator).sum()/N
+    return value
+
+
+def abc_mc_correct(option_name):
+    st.subheader(option_name)
+
+    successes = st.text_input("Number of successes with option A, B, ...", value="[45, 40]")
+    sample_sizes = st.text_input("Number of samples with option A, B, ...", value="[200, 200]")
+    successes = ast.literal_eval(successes)
+    sample_sizes = ast.literal_eval(sample_sizes)
+    alpha = st.text_input("α", value="35")
+    beta = st.text_input("β", value="141")
+    mc_samples = st.text_input("Number of Monte Carlo samples (generally 1 million to 100 million)", value="5E6")
+    seed = st.text_input("Random seed", value="0")
+    mc_samples = int(mc_samples)
+    alpha = float(alpha)
+    beta = float(beta)
+    seed = int(seed)
+    ls = len(successes)
+    ln = len(sample_sizes)
+
+    if ls != ln:
+        st.write(f"Need the same number of success values and total values. Imbalance {ls} != {ln}")
+    else:
+        total = abc_mc_chance_of_being_correct(successes, sample_sizes, alpha, beta, N=mc_samples, seed=seed)
+        if total*100 >= 0.01:
+            st.write(f"Chance option A is correct: {100*total:.2f}%")
+        else:
+            st.write(f"Chance option A is correct: {100*total:.2e}%")
+
+
+# Loss with A versus B, C, ... Monte Carlo
+def abc_mc_expected_loss(successes, sample_sizes, a, b, N=1000000, seed=None):
+    """
+    Monte Carlo simulation to determine expected loss if you choose option A.
+
+    Inputs:
+    - successes: Array of successes for samples A, B, C, ...
+    - sample_sizes: Array of sample sizes for samples A, B, C, ...
+    - a: Prior alpha
+    - b: Prior beta
+    - N: Number of samples to pick
+    - seed: Random seed
+    """
+
+    if len(successes) != len(sample_sizes):
+        raise ValueError("successes and sample_sizes need to be the same length")
+
+    if seed:
+        np.random.seed(seed)
+
+    successes = np.array(successes)
+    failures = np.array(sample_sizes) - successes
+    dim = len(successes)
+    random_vals = np.random.rand(dim, N)
+
+    # Joint probability
+    beta_vals = np.zeros((dim, N))
+    for ii in range(dim):
+        beta_vals[ii, :] = beta.pdf(random_vals[ii, :], a + successes[ii], b + failures[ii])
+    prod_beta = np.prod(beta_vals, axis=0)
+
+    # Find max lambda_notA > lambda_A (loss)
+    minus_lambda_A = random_vals - random_vals[0, :]
+    loss = np.max(minus_lambda_A, axis=0)
+    value = (prod_beta * loss).sum()/N
+
+    return value
+
+
 # TODO
 def need_to_implement(option_name):
     st.subheader(f"{option_name} has not been implemented yet")
@@ -164,7 +275,7 @@ SELECT_OPTIONS = {
     ALPHA_BETA_PRIOR: alpha_beta_prior_calculator,
     AB_CHANCE_CORRECT: ab_chance_of_being_correct,
     AB_LOSS: ab_loss,
-    ABC_MC_CHANCE_CORRECT: need_to_implement,
+    ABC_MC_CHANCE_CORRECT: abc_mc_correct,
     ABC_MC_LOSS: need_to_implement,
 }
 
